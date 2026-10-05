@@ -2,6 +2,8 @@
  * CS:APP Data Lab 
  * 
  * <Please put your name and userid here>
+ * Name: 方碧珩
+ * Userid: 24307110160
  * 
  * bits.c - Source file with your solutions to the Lab.
  *          This is the file you will hand in to your instructor.
@@ -146,7 +148,7 @@ NOTES:
  *   Rating: 1
  */
 int signMask(void) {
-  return 1;
+  return 1 << 31;
 }
 
 // P2
@@ -158,7 +160,7 @@ int signMask(void) {
  *   Rating: 2
  */
 int bitXor(int x, int y) {
-	return 2;
+	return (~(~x & ~y)) & ~(x & y);
 }
 
 // P3
@@ -170,7 +172,8 @@ int bitXor(int x, int y) {
  *   Rating: 3
  */
 int negativePart(int x){
-  return 3;
+  int sign = x >> 31;
+  return (~x + 1) & sign;
 }
 
 
@@ -198,7 +201,8 @@ int copyByteWithin(int x, int src, int dst) {
  *   Rating: 4
  */
 int logicalShift(int x, int n) {
-  return 5;
+  int mask = ~(((1 << 31) >> n) << 1);
+  return (x >> n) & mask;
 }
 
 // P6
@@ -210,7 +214,14 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int swapNibblePairs(int x) {
-  return 6;
+  int maskLow = 0x0F, maskHigh, shifted, logicMask;
+  maskLow = maskLow | (maskLow << 8);
+  maskLow = maskLow | (maskLow << 16);
+  maskHigh = maskLow << 4;
+  shifted = (x & maskHigh) >> 4;
+  logicMask = ~(((1 << 31) >> 4) << 1);
+  shifted = shifted & logicMask;
+  return ((x & maskLow) << 4) | shifted;
 }
 
 // P7
@@ -223,7 +234,9 @@ int swapNibblePairs(int x) {
  *   Rating: 4
  */
 int secondLowestZeroBit(int x) {
-  return 7;
+  int lowestZero = ~x & (x + 1);
+  int second = ~(x | lowestZero) & ((x | lowestZero) + 1);
+  return second;
 }
 
 // P8
@@ -236,7 +249,12 @@ int secondLowestZeroBit(int x) {
  *   Rating: 5
  */
 int oddParity(int x) {
-  return 8;
+  x ^= x >> 16;
+  x ^= x >> 8;
+  x ^= x >> 4;
+  x ^= x >> 2;
+  x ^= x >> 1;
+  return !(x & 1);
 }
 
 // P9
@@ -249,7 +267,11 @@ int oddParity(int x) {
  *   Rating: 5
  */
 int rotateRightBits(int x, int n) {
-  return 9;
+  int shift = 32 + (~n + 1);
+  int mask = ~(((1 << 31) >> n) << 1);
+  int right = (x >> n) & mask;
+  int left = x << shift;
+  return right | left;
 }
 
 // P10
@@ -307,7 +329,25 @@ int isBetweenEitherOrder(int x, int a, int b) {
  *   Rating: 7
  */
 int mul5Sat(int x) {
-  return 13;
+  int INT_MIN = 1 << 31;
+  int INT_MAX = ~INT_MIN;
+  int mul2 = x << 1;
+  int mul4 = mul2 << 1;
+  int mul5 = mul4 + x;
+
+  int signX = x >> 31;
+  int signMul2 = mul2 >> 31;
+  int signMul4 = mul4 >> 31;
+  int signMul5 = mul5 >> 31;
+
+  int overflow2 = signX ^ signMul2;
+  int overflow4 = signX ^ signMul4;
+  int overflow5 = signX ^ signMul5;
+
+  int overflow = overflow2 | overflow4 | overflow5;
+
+  int resultIfOverflow = (signX & INT_MIN) | (~signX & INT_MAX);
+  return (overflow & resultIfOverflow) | (~overflow & mul5);
 }
 
 // P14
@@ -367,7 +407,44 @@ unsigned floatRoundEven(unsigned uf) {
  *   Rating: 10
  */
 unsigned float_i2f(int x) {
-  return 17;
+  unsigned sign, absX, exp, frac, remainder;
+  int shift;
+
+  if (x == 0) return 0;
+
+  // 处理符号
+  sign = 0;
+  if (x < 0) {
+    sign = 0x80000000;
+    absX = (x == 0x80000000) ? 0x80000000 : -x; // 防止溢出
+  } else {
+    absX = x;
+  }
+
+  // 找到最高位
+  shift = 0;
+  while ((absX & 0x80000000) == 0) {
+    absX <<= 1;
+    shift++;
+  }
+
+  // 指数 = 127 + (31 - shift)
+  exp = 158 - shift;
+
+  // 截取23位尾数
+  frac = (absX & 0x7FFFFFFF) >> 8;
+  remainder = absX & 0xFF;
+
+  // IEEE 舍入规则 (round to even)
+  if (remainder > 128 || (remainder == 128 && (frac & 1))) {
+    frac++;
+    if (frac >> 23) {
+      frac &= 0x7FFFFF; // 清除溢出位
+      exp++;
+    }
+  }
+
+  return sign | (exp << 23) | frac;
 }
 
 
@@ -381,7 +458,27 @@ unsigned float_i2f(int x) {
  *   Rating: 10
  */
 int bitCount(int x) {
-  return 18;
+  int result = 0;
+  int mask = 0x55 | (0x55 << 8);
+  mask = mask | (mask << 16);
+  result = (x & mask);
+  x = x >> 1;
+  result = result + (x & mask);
+
+  mask = 0x33 | (0x33 << 8);
+  mask = mask | (mask << 16);
+  result = ((result >> 2) & mask) + (result & mask);
+
+  mask = 0x0F | (0x0F << 8);
+  mask = mask | (mask << 16);
+  result = ((result >> 4) & mask) + (result & mask);
+
+  mask = 0xFF | (0xFF << 16);
+  result = ((result >> 8) & mask) + (result & mask);
+
+  mask = 0xFF | (0xFF << 8);
+  result = ((result >> 16) & mask) + (result & mask);
+  return result;
 }
 
 // P19
@@ -395,5 +492,22 @@ int bitCount(int x) {
  */
 int bitReverse(int x)
 {
-  return 19;
+  int t, m1, m2, m3;
+
+  x = (x << 15) | (x >> 17);
+
+  m1 = 0x7F << 17 | 0x7F;
+  m1 = m1 >>2; // 0x003f801f
+  t = (x ^ (x >> 10)) & m1;
+  x = (t + (t << 10)) ^ x;
+
+  m2 = 0x21 | (0xE1 << 10) | (0x7 << 25); // 0x0e038421
+  t = (x ^ (x >> 4)) & m2;
+  x = (t + (t << 4)) ^ x;
+
+  m3 = (0x42) | (0x88 << 8) | (0x48 << 16) | (0x22 << 24); // 0x22488842
+  t = (x ^ (x >> 2)) & m3;
+  x = (t + (t << 2)) ^ x;
+
+  return x;
 }
