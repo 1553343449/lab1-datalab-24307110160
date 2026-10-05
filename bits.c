@@ -188,7 +188,11 @@ int negativePart(int x){
  *   Rating: 4
  */
 int copyByteWithin(int x, int src, int dst) {
-  return 4;
+  int srcShift = src << 3;
+  int dstShift = dst << 3;
+  int byte = (x >> srcShift) & 0xFF;
+  int mask = 0xFF << dstShift;
+  return (x & ~mask) | (byte << dstShift);
 }
 
 // P5
@@ -286,7 +290,14 @@ int rotateRightBits(int x, int n) {
  *   Rating: 5
  */
 int roundEvenPow2(int x, int n) {
-  return 10;
+  int q = x >> n;
+  int mask = (1 << n) + ~0;
+  int rem = x & mask;
+  int half = 1 << (n + ~0);
+  int greater = ((half + ~rem + 1) >> 31) & 1;
+  int equal = !(rem ^ half);
+  int up = greater | (equal & (q & 1));
+  return (q + up) << n;
 }
 
 // P11
@@ -302,7 +313,14 @@ int roundEvenPow2(int x, int n) {
  *   Rating: 5
  */
 int midpointTowardFirst(int x, int y) {
-  return 11;
+  int sx = x >> 31;
+  int sy = y >> 31;
+  int signDiff = sx ^ sy;
+  int yMinusX = y + ~x + 1;
+  int xGreaterMask = (signDiff & ~sx) | (~signDiff & (yMinusX >> 31));
+  int tie = (x ^ y) & 1;
+  int floorMid = (x & y) + ((x ^ y) >> 1);
+  return floorMid + (tie & (xGreaterMask & 1));
 }
 
 
@@ -316,7 +334,15 @@ int midpointTowardFirst(int x, int y) {
  *   Rating: 7
  */
 int isBetweenEitherOrder(int x, int a, int b) {
-  return 12;
+  int xa = x + ~a + 1;
+  int ax = a + ~x + 1;
+  int xb = x + ~b + 1;
+  int bx = b + ~x + 1;
+  int aLeX = !((xa ^ ((x ^ a) & (x ^ xa))) >> 31);
+  int xLeA = !((ax ^ ((a ^ x) & (a ^ ax))) >> 31);
+  int bLeX = !((xb ^ ((x ^ b) & (x ^ xb))) >> 31);
+  int xLeB = !((bx ^ ((b ^ x) & (b ^ bx))) >> 31);
+  return (aLeX & xLeB) | (bLeX & xLeA);
 }
 
 // P13
@@ -360,7 +386,22 @@ int mul5Sat(int x) {
  *   Rating: 7
  */
 int classifyAdd3(int x, int y, int z) {
-  return 14;
+  int s1 = x + y;
+  int s2 = s1 + z;
+  int c1 = (((x & y) | ((x | y) & ~s1)) >> 31) & 1;
+  int c2 = (((s1 & z) | ((s1 | z) & ~s2)) >> 31) & 1;
+  int nx = (x >> 31) & 1;
+  int ny = (y >> 31) & 1;
+  int nz = (z >> 31) & 1;
+  int k = c1 + c2 + ~nx + 1 + ~ny + 1 + ~nz + 1;
+  int sk = (k >> 31) & 1;
+  int zeroK = !k;
+  int positiveK = (!sk) & (!zeroK);
+  int signS2 = (s2 >> 31) & 1;
+  int above = positiveK | (zeroK & signS2);
+  int minusOneK = !(k + 1);
+  int below = sk & ((!minusOneK) | (!signS2));
+  return above + ~below + 1;
 }
 
 // P15
@@ -377,7 +418,40 @@ int classifyAdd3(int x, int y, int z) {
  *   Rating: 7
  */
 unsigned floatScaleThreeHalves(unsigned uf) {
-  return 15;
+  unsigned sign = uf & 0x80000000u;
+  unsigned exp = (uf >> 23) & 0xFFu;
+  unsigned frac = uf & 0x7FFFFFu;
+  unsigned sig, three, q, rem, up;
+
+  if (exp == 0xFFu) return uf;
+
+  if (exp == 0) {
+    three = frac + (frac << 1);
+    q = three >> 1;
+    if ((three & 1u) && (q & 1u)) q++;
+    if (q & 0x800000u) return sign | 0x800000u | (q & 0x7FFFFFu);
+    return sign | q;
+  }
+
+  sig = 0x800000u | frac;
+  three = sig + (sig << 1);
+  if (three & 0x2000000u) {
+    q = three >> 2;
+    rem = three & 3u;
+    up = (rem > 2u) || (rem == 2u && (q & 1u));
+    q += up;
+    exp++;
+  } else {
+    q = three >> 1;
+    if ((three & 1u) && (q & 1u)) q++;
+  }
+
+  if (q & 0x1000000u) {
+    q >>= 1;
+    exp++;
+  }
+  if (exp >= 0xFFu) return sign | 0x7F800000u;
+  return sign | (exp << 23) | (q & 0x7FFFFFu);
 }
 
 // P16
@@ -393,7 +467,27 @@ unsigned floatScaleThreeHalves(unsigned uf) {
  *   Rating: 10
  */
 unsigned floatRoundEven(unsigned uf) {
-  return 16;
+  unsigned sign = uf & 0x80000000u;
+  unsigned mag = uf & 0x7FFFFFFFu;
+  unsigned exp = (uf >> 23) & 0xFFu;
+  unsigned mask, rem, half, base, up;
+  int e;
+
+  if (exp == 0xFFu) return uf;
+  if (mag < 0x3F000000u) return sign;
+  if (mag == 0x3F000000u) return sign;
+  if (mag < 0x3F800000u) return sign | 0x3F800000u;
+
+  e = exp - 127;
+  if (e >= 23) return uf;
+
+  mask = (1u << (23 - e)) - 1u;
+  rem = mag & mask;
+  half = 1u << (22 - e);
+  base = mag & ~mask;
+  up = (rem > half) || (rem == half && ((mag >> (23 - e)) & 1u));
+  if (up) base += 1u << (23 - e);
+  return sign | base;
 }
 
 // P17
